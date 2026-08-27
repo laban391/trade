@@ -9,6 +9,15 @@
     <script src="https://js.paystack.co/v1/inline.js"></script>
     <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js">
     </script>
+    
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js">
+    </script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js">
+    </script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js">
+    </script>
+
     <style>
         /* ───────────── RESET & BASE ───────────── */
         * {
@@ -256,7 +265,7 @@
             color: #fff;
         }
 
-        /* Admin indicator - shows admin mode but not clickable */
+        /* Admin indicator */
         .admin-indicator {
             display: none;
             background: #ef4444;
@@ -1561,6 +1570,39 @@
             opacity: 0.2;
         }
 
+        /* ───────────── LOADING ───────────── */
+        .loading-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .loading-overlay.active {
+            display: flex;
+        }
+        .loading-overlay .spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid #2a3344;
+            border-top-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+        .loading-overlay .text {
+            color: #8899bb;
+            font-size: 14px;
+        }
+
         /* ───────────── TOAST ───────────── */
         .toast {
             position: fixed;
@@ -1687,6 +1729,14 @@
 </head>
 <body>
 
+    <!-- ════════════════════════════════════════ -->
+    <!--  LOADING OVERLAY                        -->
+    <!-- ════════════════════════════════════════ -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+        <div class="text">Loading...</div>
+    </div>
+
     <div class="app">
 
         <!-- ════════════════════════════════════════ -->
@@ -1741,7 +1791,7 @@
             </div>
         </div>
 
-        <!-- ADMIN LOGIN (Completely Hidden - Only accessible via secret trigger) -->
+        <!-- ADMIN LOGIN (Completely Hidden) -->
         <div class="auth-page" id="adminLoginPage">
             <div class="auth-container" style="border-color: #ef4444;">
                 <div class="logo" style="-webkit-text-fill-color: #ef4444; background: none; color: #ef4444;">
@@ -1751,7 +1801,7 @@
                 <form id="adminLoginForm">
                     <div class="form-group">
                         <label>Admin Email</label>
-                        <input type="email" id="adminEmail" placeholder="" value="admin@tradex.com" required />
+                        <input type="email" id="adminEmail" placeholder="admin@tradex.com" value="admin@tradex.com" required />
                     </div>
                     <div class="form-group">
                         <label>Admin Password</label>
@@ -1779,7 +1829,6 @@
                     <span data-page="explorer">Market Explorer</span>
                     <span data-page="portfolio">Portfolio</span>
                     <span data-page="history">History</span>
-                    <!-- Admin link - COMPLETELY HIDDEN from regular users -->
                     <span data-page="admin" class="admin-link" id="adminNavLink">
                         <i class="fas fa-shield-alt"></i> Admin Panel
                     </span>
@@ -1915,7 +1964,7 @@
                 <div class="history-list" id="historyList"></div>
             </div>
 
-            <!-- ADMIN PANEL (Completely hidden - only visible when admin is logged in) -->
+            <!-- ADMIN PANEL -->
             <div class="page" id="page-admin">
                 <div class="admin-panel active">
                     <div class="admin-header">
@@ -1954,7 +2003,12 @@
                                 </tr>
                             </thead>
                             <tbody id="adminUserTableBody">
-                                <!-- Populated by JavaScript -->
+                                <tr>
+                                    <td colspan="7" style="text-align:center; padding:30px; color:#8899bb;">
+                                        <i class="fas fa-spinner fa-spin" style="font-size:24px; display:block; margin-bottom:8px;"></i>
+                                        Loading users...
+                                    </td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>
@@ -2219,7 +2273,7 @@
         </div>
 
         <!-- ════════════════════════════════════════ -->
-        <!--  SECRET ADMIN TRIGGER (Bottom Right)   -->
+        <!--  SECRET ADMIN TRIGGER                   -->
         <!-- ════════════════════════════════════════ -->
 
         <button class="secret-admin-trigger" id="secretAdminTrigger" title="Secret Admin Access">
@@ -2238,8 +2292,25 @@
 
     <script>
         // ─────────────────────────────────────────────────────
+        //  FIREBASE CONFIGURATION - YOUR CONFIG
+        // ─────────────────────────────────────────────────────
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCkJZx_YhY2uOXVNJxtLv3ZiSPfxW4Pq58",
+            authDomain: "test-6c722.firebaseapp.com",
+            projectId: "test-6c722",
+            storageBucket: "test-6c722.firebasestorage.app",
+            messagingSenderId: "66819677027",
+            appId: "1:66819677027:web:6f357918b663d4b0ef9156",
+            measurementId: "G-HFBV7V8R4K"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        // ─────────────────────────────────────────────────────
         //  ADMIN CREDENTIALS (Hardcoded for security)
-        //  COMPLETELY SEPARATE FROM REGULAR USERS
         // ─────────────────────────────────────────────────────
 
         const ADMIN_CREDENTIALS = {
@@ -2285,154 +2356,186 @@
         ];
 
         // ─────────────────────────────────────────────────────
-        //  AUTH SYSTEM - Regular Users
+        //  AUTH SYSTEM - FIREBASE VERSION
         // ─────────────────────────────────────────────────────
 
         const auth = {
-            users: JSON.parse(localStorage.getItem('tradex_users') || '[]'),
-            currentUser: JSON.parse(localStorage.getItem('tradex_current_user') || 'null'),
+            users: [],
+            currentUser: null,
 
-            save() {
-                localStorage.setItem('tradex_users', JSON.stringify(this.users));
-                localStorage.setItem('tradex_current_user', JSON.stringify(this.currentUser));
-            },
-
-            login(email, password) {
-                const user = this.users.find(u => u.email === email && u.password === password);
-                if (user) {
-                    this.currentUser = user;
-                    this.save();
-                    return true;
+            // Load all users from Firestore
+            async loadUsers() {
+                try {
+                    const snapshot = await db.collection('users').get();
+                    this.users = [];
+                    snapshot.forEach(doc => {
+                        this.users.push({ id: doc.id, ...doc.data() });
+                    });
+                    return this.users;
+                } catch (error) {
+                    console.error('Failed to load users:', error);
+                    return [];
                 }
-                return false;
             },
 
-            signup(name, email, password) {
-                if (this.users.find(u => u.email === email)) return false;
-                const user = {
-                    id: Date.now(),
-                    name,
-                    email,
-                    password,
-                    initials: name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2),
-                    memberSince: new Date().toLocaleString('en', { month: 'short', year: 'numeric' }),
-                    trades: 0,
-                    winRate: 0,
-                    wallet: '0x' + Math.random().toString(16).slice(2, 10).toUpperCase() + '...' + Math.random().toString(16)
-                        .slice(2, 6).toUpperCase(),
-                    balance: 0,
-                    holdings: {},
-                    avgBuyPrice: {},
-                    totalDeposits: 0,
-                    totalWithdrawals: 0,
-                    bankDetails: {},
-                };
-                this.users.push(user);
-                this.currentUser = user;
-                this.save();
-                return true;
+            // Sign up new user
+            async signup(name, email, password) {
+                try {
+                    // Check if user already exists
+                    const existing = await db.collection('users').where('email', '==', email).get();
+                    if (!existing.empty) return false;
+
+                    const userData = {
+                        name,
+                        email,
+                        password,
+                        initials: name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2),
+                        memberSince: new Date().toLocaleString('en', { month: 'short', year: 'numeric' }),
+                        trades: 0,
+                        winRate: 0,
+                        wallet: '0x' + Math.random().toString(16).slice(2, 10).toUpperCase() + '...' + Math.random()
+                            .toString(16).slice(2, 6).toUpperCase(),
+                        balance: 0,
+                        holdings: {},
+                        avgBuyPrice: {},
+                        totalDeposits: 0,
+                        totalWithdrawals: 0,
+                        bankDetails: {},
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    };
+
+                    const docRef = await db.collection('users').add(userData);
+                    this.currentUser = { id: docRef.id, ...userData };
+                    return true;
+                } catch (error) {
+                    console.error('Signup failed:', error);
+                    return false;
+                }
             },
 
+            // Login user
+            async login(email, password) {
+                try {
+                    const snapshot = await db.collection('users')
+                        .where('email', '==', email)
+                        .where('password', '==', password)
+                        .get();
+
+                    if (snapshot.empty) return false;
+
+                    const doc = snapshot.docs[0];
+                    this.currentUser = { id: doc.id, ...doc.data() };
+                    return true;
+                } catch (error) {
+                    console.error('Login failed:', error);
+                    return false;
+                }
+            },
+
+            // Logout
             logout() {
                 this.currentUser = null;
-                this.save();
             },
 
-            updateUser(updates) {
-                if (!this.currentUser) return;
-                Object.assign(this.currentUser, updates);
-                const index = this.users.findIndex(u => u.id === this.currentUser.id);
-                if (index !== -1) this.users[index] = this.currentUser;
-                this.save();
+            // Update user
+            async updateUser(id, updates) {
+                try {
+                    await db.collection('users').doc(id).update(updates);
+                    if (this.currentUser && this.currentUser.id === id) {
+                        this.currentUser = { ...this.currentUser, ...updates };
+                    }
+                    // Refresh users list
+                    await this.loadUsers();
+                    return true;
+                } catch (error) {
+                    console.error('Update failed:', error);
+                    return false;
+                }
             },
 
-            addBalance(amount) {
+            // Delete user
+            async deleteUser(id) {
+                try {
+                    await db.collection('users').doc(id).delete();
+                    this.users = this.users.filter(u => u.id !== id);
+                    return true;
+                } catch (error) {
+                    console.error('Delete failed:', error);
+                    return false;
+                }
+            },
+
+            // Add balance
+            async addBalance(amount) {
                 if (!this.currentUser) return false;
-                this.currentUser.balance = (this.currentUser.balance || 0) + amount;
-                this.currentUser.totalDeposits = (this.currentUser.totalDeposits || 0) + amount;
-                const index = this.users.findIndex(u => u.id === this.currentUser.id);
-                if (index !== -1) this.users[index] = this.currentUser;
-                this.save();
-                return true;
+                const newBalance = (this.currentUser.balance || 0) + amount;
+                const newTotalDeposits = (this.currentUser.totalDeposits || 0) + amount;
+                return await this.updateUser(this.currentUser.id, {
+                    balance: newBalance,
+                    totalDeposits: newTotalDeposits
+                });
             },
 
-            subtractBalance(amount) {
+            // Subtract balance
+            async subtractBalance(amount) {
                 if (!this.currentUser) return false;
                 if ((this.currentUser.balance || 0) < amount) return false;
-                this.currentUser.balance = (this.currentUser.balance || 0) - amount;
-                this.currentUser.totalWithdrawals = (this.currentUser.totalWithdrawals || 0) + amount;
-                const index = this.users.findIndex(u => u.id === this.currentUser.id);
-                if (index !== -1) this.users[index] = this.currentUser;
-                this.save();
-                return true;
+                const newBalance = (this.currentUser.balance || 0) - amount;
+                const newTotalWithdrawals = (this.currentUser.totalWithdrawals || 0) + amount;
+                return await this.updateUser(this.currentUser.id, {
+                    balance: newBalance,
+                    totalWithdrawals: newTotalWithdrawals
+                });
             },
 
-            getBalance() {
-                return this.currentUser ? this.currentUser.balance || 0 : 0;
-            },
-
-            updateHoldings(symbol, qty, price, type) {
+            // Update holdings
+            async updateHoldings(symbol, qty, price, type) {
                 if (!this.currentUser) return;
-                this.currentUser.holdings = this.currentUser.holdings || {};
-                this.currentUser.avgBuyPrice = this.currentUser.avgBuyPrice || {};
+                const holdings = this.currentUser.holdings || {};
+                const avgBuyPrice = this.currentUser.avgBuyPrice || {};
 
                 if (type === 'buy') {
-                    const currentHolding = this.currentUser.holdings[symbol] || 0;
-                    const currentAvg = this.currentUser.avgBuyPrice[symbol] || 0;
+                    const currentHolding = holdings[symbol] || 0;
+                    const currentAvg = avgBuyPrice[symbol] || 0;
                     const totalCost = (currentHolding * currentAvg) + (qty * price);
                     const newTotal = currentHolding + qty;
-                    this.currentUser.avgBuyPrice[symbol] = totalCost / newTotal;
-                    this.currentUser.holdings[symbol] = newTotal;
+                    avgBuyPrice[symbol] = totalCost / newTotal;
+                    holdings[symbol] = newTotal;
                 } else {
-                    const currentHolding = this.currentUser.holdings[symbol] || 0;
+                    const currentHolding = holdings[symbol] || 0;
                     const newHolding = Math.max(0, currentHolding - qty);
                     if (newHolding === 0) {
-                        delete this.currentUser.holdings[symbol];
-                        delete this.currentUser.avgBuyPrice[symbol];
+                        delete holdings[symbol];
+                        delete avgBuyPrice[symbol];
                     } else {
-                        this.currentUser.holdings[symbol] = newHolding;
+                        holdings[symbol] = newHolding;
                     }
                 }
 
-                const index = this.users.findIndex(u => u.id === this.currentUser.id);
-                if (index !== -1) this.users[index] = this.currentUser;
-                this.save();
+                await this.updateUser(this.currentUser.id, {
+                    holdings: holdings,
+                    avgBuyPrice: avgBuyPrice
+                });
             },
 
-            // Admin methods - Separate from regular user operations
-            getAllUsers() {
-                // Return all regular users (excluding admin)
+            // Get all users (for admin)
+            async getAllUsers() {
+                await this.loadUsers();
                 return this.users;
             },
 
+            // Get user by ID
             getUserById(id) {
                 return this.users.find(u => u.id === id);
             },
 
-            updateUserById(id, updates) {
-                const index = this.users.findIndex(u => u.id === id);
-                if (index === -1) return false;
-                Object.assign(this.users[index], updates);
-                this.save();
-                return true;
-            },
-
-            deleteUserById(id) {
-                const index = this.users.findIndex(u => u.id === id);
-                if (index === -1) return false;
-                this.users.splice(index, 1);
-                this.save();
-                return true;
-            },
-
-            resetUserBalance(id) {
-                const user = this.getUserById(id);
-                if (!user) return false;
-                user.balance = 0;
-                user.holdings = {};
-                user.avgBuyPrice = {};
-                this.save();
-                return true;
+            // Reset user balance
+            async resetUserBalance(id) {
+                return await this.updateUser(id, {
+                    balance: 0,
+                    holdings: {},
+                    avgBuyPrice: {}
+                });
             }
         };
 
@@ -2519,6 +2622,7 @@
             el.connectWalletBtn = document.getElementById('connectWalletBtn');
             el.adminIndicator = document.getElementById('adminIndicator');
             el.adminNavLink = document.getElementById('adminNavLink');
+            el.loadingOverlay = document.getElementById('loadingOverlay');
 
             // Deposit Elements
             el.depositBtn = document.getElementById('depositBtn');
@@ -2591,6 +2695,19 @@
         }
 
         // ─────────────────────────────────────────────────────
+        //  LOADING
+        // ─────────────────────────────────────────────────────
+
+        function showLoading(text = 'Loading...') {
+            el.loadingOverlay.querySelector('.text').textContent = text;
+            el.loadingOverlay.classList.add('active');
+        }
+
+        function hideLoading() {
+            el.loadingOverlay.classList.remove('active');
+        }
+
+        // ─────────────────────────────────────────────────────
         //  TOAST
         // ─────────────────────────────────────────────────────
 
@@ -2628,12 +2745,12 @@
         function updateUserUI() {
             const user = auth.currentUser;
             if (user) {
-                el.navAvatar.textContent = user.initials;
-                el.navUserName.textContent = user.name.split(' ')[0];
-                el.modalAvatar.textContent = user.initials;
-                el.modalName.textContent = user.name;
-                el.modalEmail.textContent = user.email;
-                el.modalMemberSince.textContent = user.memberSince || 'Jan 2024';
+                el.navAvatar.textContent = user.initials || 'U';
+                el.navUserName.textContent = user.name ? user.name.split(' ')[0] : 'User';
+                el.modalAvatar.textContent = user.initials || 'U';
+                el.modalName.textContent = user.name || 'User';
+                el.modalEmail.textContent = user.email || '';
+                el.modalMemberSince.textContent = user.memberSince || 'N/A';
                 el.modalTrades.textContent = user.trades || 0;
                 el.modalWinRate.textContent = (user.winRate || 0) + '%';
                 el.modalWallet.textContent = user.wallet || '0x7F4...3B2D';
@@ -2664,13 +2781,9 @@
         function refreshWithdrawalModalBalance() {
             const user = auth.currentUser;
             if (user) {
-                const storedUser = auth.users.find(u => u.id === user.id);
-                if (storedUser) {
-                    auth.currentUser = storedUser;
-                    updateWithdrawalBalanceDisplay();
-                    updateUI();
-                    checkWithdrawalBalance();
-                }
+                updateWithdrawalBalanceDisplay();
+                updateUI();
+                checkWithdrawalBalance();
             }
         }
 
@@ -3411,8 +3524,12 @@
             handler.openIframe();
         }
 
-        function completeDeposit(amount, methodName) {
-            if (auth.addBalance(amount)) {
+        async function completeDeposit(amount, methodName) {
+            showLoading('Processing deposit...');
+            const success = await auth.addBalance(amount);
+            hideLoading();
+
+            if (success) {
                 let type = 'deposit';
                 if (methodName === 'M-PESA') type = 'mpesa';
                 else if (methodName === 'Paystack') type = 'paystack';
@@ -3437,6 +3554,8 @@
                 if (el.withdrawalModal.classList.contains('active')) {
                     refreshWithdrawalModalBalance();
                 }
+            } else {
+                showToast('❌ Failed to process deposit.', true);
             }
         }
 
@@ -3523,7 +3642,7 @@
             updateWithdrawalUI();
         }
 
-        function requestWithdrawal() {
+        async function requestWithdrawal() {
             const user = auth.currentUser;
             if (!user) {
                 showToast('Please login first', true);
@@ -3565,12 +3684,16 @@
                 details = { mpesaPhone: phone };
             }
 
-            auth.updateUser({ bankDetails: details });
+            await auth.updateUser(user.id, { bankDetails: details });
 
             const fee = amount * 0.02;
             const receive = amount - fee;
 
-            if (auth.subtractBalance(amount)) {
+            showLoading('Processing withdrawal...');
+            const success = await auth.subtractBalance(amount);
+            hideLoading();
+
+            if (success) {
                 const withdrawal = {
                     type: 'withdrawal',
                     symbol: method === 'bank' ? 'Bank Transfer' :
@@ -3640,22 +3763,24 @@
         }
 
         // ─────────────────────────────────────────────────────
-        //  ADMIN PANEL - COMPLETELY SEPARATE
+        //  ADMIN PANEL - FIREBASE VERSION
         // ─────────────────────────────────────────────────────
 
-        function renderAdminPanel() {
+        async function renderAdminPanel() {
             if (!isAdmin) {
                 showToast('❌ Access denied. Admin only.', true);
                 navigateTo('dashboard');
                 return;
             }
 
-            // Get ALL regular users (not including admin)
-            const users = auth.getAllUsers();
+            showLoading('Loading users...');
+            const users = await auth.getAllUsers();
+            hideLoading();
+
             const allHistory = app.tradeHistory || [];
             const allWithdrawals = app.pendingWithdrawals || [];
 
-            // Stats - Only from regular users
+            // Stats
             el.adminTotalUsers.textContent = users.length;
 
             let totalBalance = 0;
@@ -3668,7 +3793,7 @@
             el.adminTotalTransactions.textContent = allHistory.length + allWithdrawals.length;
             el.adminTotalDeposits.textContent = '$' + totalDeposits.toFixed(2);
 
-            // User Table - Only regular users
+            // User Table
             if (users.length === 0) {
                 el.adminUserTableBody.innerHTML = `
                     <tr>
@@ -3706,13 +3831,13 @@
             // Bind admin buttons
             document.querySelectorAll('.admin-user-list .view-btn').forEach(btn => {
                 btn.addEventListener('click', () => {
-                    const id = parseInt(btn.dataset.id);
+                    const id = btn.dataset.id;
                     openAdminUserDetail(id);
                 });
             });
             document.querySelectorAll('.admin-user-list .edit-btn').forEach(btn => {
                 btn.addEventListener('click', () => {
-                    const id = parseInt(btn.dataset.id);
+                    const id = btn.dataset.id;
                     openAdminUserDetail(id);
                     setTimeout(() => {
                         if (el.adminEditBalance) el.adminEditBalance.focus();
@@ -3720,11 +3845,14 @@
                 });
             });
             document.querySelectorAll('.admin-user-list .delete-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const id = parseInt(btn.dataset.id);
+                btn.addEventListener('click', async () => {
+                    const id = btn.dataset.id;
                     const user = auth.getUserById(id);
                     if (user && confirm(`⚠️ Are you sure you want to delete user "${user.name}" (${user.email})? This action cannot be undone!`)) {
-                        if (auth.deleteUserById(id)) {
+                        showLoading('Deleting user...');
+                        const success = await auth.deleteUser(id);
+                        hideLoading();
+                        if (success) {
                             showToast(`✅ User ${user.name} deleted successfully.`);
                             renderAdminPanel();
                         } else {
@@ -3736,7 +3864,7 @@
         }
 
         // ─────────────────────────────────────────────────────
-        //  ADMIN USER DETAIL - Only regular users
+        //  ADMIN USER DETAIL
         // ─────────────────────────────────────────────────────
 
         function openAdminUserDetail(userId) {
@@ -3786,7 +3914,6 @@
 
             // Transaction History
             const userHistory = app.tradeHistory.filter(h => {
-                // Show all history for now since we don't have user-specific tracking
                 return true;
             });
 
@@ -3826,7 +3953,7 @@
             app.viewingUserId = null;
         }
 
-        function saveAdminUserChanges() {
+        async function saveAdminUserChanges() {
             const userId = app.viewingUserId;
             if (!userId) {
                 showToast('❌ No user selected.', true);
@@ -3845,11 +3972,14 @@
                 return;
             }
 
-            if (auth.updateUserById(userId, { balance: newBalance })) {
+            showLoading('Updating user...');
+            const success = await auth.updateUser(userId, { balance: newBalance });
+            hideLoading();
+
+            if (success) {
                 showToast(`✅ Updated ${user.name}'s balance to $${newBalance.toFixed(2)}`);
                 closeAdminDetailModal();
                 renderAdminPanel();
-                // If it's the current user, refresh their UI
                 if (auth.currentUser && auth.currentUser.id === userId) {
                     auth.currentUser = auth.getUserById(userId);
                     updateUserUI();
@@ -3860,7 +3990,7 @@
             }
         }
 
-        function resetAdminUserBalance() {
+        async function resetAdminUserBalance() {
             const userId = app.viewingUserId;
             if (!userId) {
                 showToast('❌ No user selected.', true);
@@ -3874,7 +4004,11 @@
             }
 
             if (confirm(`⚠️ Reset ${user.name}'s balance to $0 and clear all holdings? This cannot be undone!`)) {
-                if (auth.resetUserBalance(userId)) {
+                showLoading('Resetting user...');
+                const success = await auth.resetUserBalance(userId);
+                hideLoading();
+
+                if (success) {
                     showToast(`✅ Reset ${user.name}'s balance to $0`);
                     closeAdminDetailModal();
                     renderAdminPanel();
@@ -3901,7 +4035,7 @@
         //  ORDER EXECUTION
         // ─────────────────────────────────────────────────────
 
-        function executeOrder() {
+        async function executeOrder() {
             const user = auth.currentUser;
             if (!user) { showToast('Please login first', true); return; }
 
@@ -3920,9 +4054,13 @@
                     return;
                 }
                 user.balance = (user.balance || 0) - total;
-                auth.updateHoldings(sym, qty, price, 'buy');
+                await auth.updateHoldings(sym, qty, price, 'buy');
                 user.trades = (user.trades || 0) + 1;
                 user.winRate = Math.min(100, (user.winRate || 0) + 0.5);
+                await auth.updateUser(user.id, {
+                    trades: user.trades,
+                    winRate: user.winRate
+                });
                 showToast(`✅ Bought ${qty} ${sym} for $${total.toFixed(2)}`);
             } else {
                 const held = (user.holdings || {})[sym] || 0;
@@ -3931,9 +4069,13 @@
                     return;
                 }
                 user.balance = (user.balance || 0) + total;
-                auth.updateHoldings(sym, qty, price, 'sell');
+                await auth.updateHoldings(sym, qty, price, 'sell');
                 user.trades = (user.trades || 0) + 1;
                 user.winRate = Math.max(0, (user.winRate || 0) - 0.3);
+                await auth.updateUser(user.id, {
+                    trades: user.trades,
+                    winRate: user.winRate
+                });
                 showToast(`✅ Sold ${qty} ${sym} for $${total.toFixed(2)}`);
             }
 
@@ -3947,7 +4089,7 @@
             });
             localStorage.setItem('tradex_history', JSON.stringify(app.tradeHistory));
 
-            auth.save();
+            auth.currentUser = auth.getUserById(user.id);
             updateUserUI();
             updateUI();
             renderAssetsTable();
@@ -3969,15 +4111,20 @@
             el.switchToLogin.addEventListener('click', () => showAuthPage('login'));
             el.adminBackToLogin.addEventListener('click', () => showAuthPage('login'));
 
-            // ── SECRET ADMIN TRIGGER (Bottom right corner) ──
+            // ── SECRET ADMIN TRIGGER ──
             el.secretAdminTrigger.addEventListener('click', showAdminLogin);
 
             // ── Login ──
-            el.loginForm.addEventListener('submit', (e) => {
+            el.loginForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const email = el.loginEmail.value.trim();
                 const password = el.loginPassword.value;
-                if (auth.login(email, password)) {
+
+                showLoading('Logging in...');
+                const success = await auth.login(email, password);
+                hideLoading();
+
+                if (success) {
                     isAdmin = false;
                     el.adminIndicator.classList.remove('visible');
                     el.adminNavLink.classList.remove('visible');
@@ -3989,7 +4136,7 @@
             });
 
             // ── Admin Login ──
-            el.adminLoginForm.addEventListener('submit', (e) => {
+            el.adminLoginForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const email = el.adminEmail.value.trim();
                 const password = el.adminPassword.value;
@@ -3997,8 +4144,7 @@
                 if (email === ADMIN_CREDENTIALS.email && password === ADMIN_CREDENTIALS.password) {
                     isAdmin = true;
 
-                    // Admin gets a SEPARATE session - NOT associated with any regular user
-                    // Create a standalone admin session
+                    // Admin gets a SEPARATE session
                     auth.currentUser = {
                         id: 'admin_' + Date.now(),
                         name: 'Administrator',
@@ -4023,12 +4169,17 @@
             });
 
             // ── Signup ──
-            el.signupForm.addEventListener('submit', (e) => {
+            el.signupForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const name = el.signupName.value.trim();
                 const email = el.signupEmail.value.trim();
                 const password = el.signupPassword.value;
-                if (auth.signup(name, email, password)) {
+
+                showLoading('Creating account...');
+                const success = await auth.signup(name, email, password);
+                hideLoading();
+
+                if (success) {
                     isAdmin = false;
                     el.adminIndicator.classList.remove('visible');
                     el.adminNavLink.classList.remove('visible');
@@ -4089,20 +4240,26 @@
                 }
             });
 
-            el.editProfileBtn.addEventListener('click', () => {
+            el.editProfileBtn.addEventListener('click', async () => {
                 if (isAdmin) {
                     showToast('🔒 Admin profile editing is restricted.', true);
                     return;
                 }
                 const newName = prompt('Enter your name:', auth.currentUser?.name || '');
                 if (newName && newName.trim()) {
-                    auth.updateUser({
+                    showLoading('Updating profile...');
+                    const success = await auth.updateUser(auth.currentUser.id, {
                         name: newName.trim(),
                         initials: newName.trim().split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
                     });
-                    updateUserUI();
-                    showToast('✅ Profile updated!');
-                    if (isAdmin) renderAdminPanel();
+                    hideLoading();
+                    if (success) {
+                        updateUserUI();
+                        showToast('✅ Profile updated!');
+                        if (isAdmin) renderAdminPanel();
+                    } else {
+                        showToast('❌ Failed to update profile.', true);
+                    }
                 }
             });
 
@@ -4268,13 +4425,16 @@
         //  INIT
         // ─────────────────────────────────────────────────────
 
-        function init() {
+        async function init() {
             initEls();
             initEvents();
 
             ASSET_DATABASE.forEach(asset => {
                 app.prices[asset.symbol] = asset.price;
             });
+
+            // Load users from Firebase
+            await auth.loadUsers();
 
             if (auth.currentUser) {
                 if (isAdmin) {
